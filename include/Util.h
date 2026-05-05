@@ -54,6 +54,7 @@ struct GpuContext {
     QueueFamilies queueFamilies{};
     VkCommandPool graphicsCommandPool;
 };
+
 struct SwapchainContext {
     VkExtent2D extends;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
@@ -78,6 +79,38 @@ find_memory_index(VkPhysicalDevice physicalDevice, uint32_t memoryTypeIndex, VkM
     return -1;
 }
 
+inline void create_image(GpuContext *ctx, VkImage &image, VkImageUsageFlags flags,
+                         VkDeviceMemory &imageMemory, VkMemoryPropertyFlags memoryPropertyFlags,
+                         VkFormat format, uint32_t width,
+                         uint32_t height, const char *name) {
+    VkImageCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    createInfo.imageType = VK_IMAGE_TYPE_2D;
+    createInfo.extent.width = width;
+    createInfo.extent.height = height;
+    createInfo.extent.depth = 1;
+    createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    createInfo.arrayLayers = 1;
+    createInfo.mipLevels = 1;
+    createInfo.format = format;
+    createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    createInfo.usage = flags;
+    createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+
+    VK_CHECK(vkCreateImage(ctx->logicalDevice, &createInfo, nullptr, &image), "Failed to create the image {}", name);
+    VkMemoryRequirements memoryRequirements{};
+    vkGetImageMemoryRequirements(ctx->logicalDevice, image, &memoryRequirements);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memoryRequirements.size;
+    allocInfo.memoryTypeIndex = find_memory_index(ctx->physicalDevice, memoryRequirements.memoryTypeBits,
+                                                  memoryPropertyFlags);
+    VK_CHECK(vkAllocateMemory(ctx->logicalDevice, &allocInfo, nullptr, &imageMemory),
+             "Failed to allocate the memory for {}", name);
+    vkBindImageMemory(ctx->logicalDevice, image, imageMemory, 0);
+}
+
 inline void
 create_image_view(VkDevice device, VkImage &image, VkImageView &imageView, VkFormat format) {
     VkImageViewCreateInfo createInfo{};
@@ -97,6 +130,17 @@ create_image_view(VkDevice device, VkImage &image, VkImageView &imageView, VkFor
 
     VK_CHECK(vkCreateImageView(device, &createInfo, nullptr, &imageView),
              "Failed to create the image view");
+}
+
+inline void create_sampler(GpuContext *ctx, VkSampler &sampler) {
+    VkSamplerCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    createInfo.magFilter = VK_FILTER_LINEAR;
+    createInfo.minFilter = VK_FILTER_LINEAR;
+    createInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    createInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    createInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    VK_CHECK(vkCreateSampler(ctx->logicalDevice, &createInfo, nullptr, &sampler), "Failed to create the sampler");
 }
 
 inline void create_buffer(GpuContext *context, VkBuffer &buffer, VkDeviceMemory &memory,
@@ -130,7 +174,7 @@ inline void create_buffer(GpuContext *context, VkBuffer &buffer, VkDeviceMemory 
     name.pObjectName = "BufferMemory";
 
     PFN_vkSetDebugUtilsObjectNameEXT setName = (PFN_vkSetDebugUtilsObjectNameEXT) vkGetDeviceProcAddr(
-            context->logicalDevice, "vkSetDebugUtilsObjectNameEXT");
+        context->logicalDevice, "vkSetDebugUtilsObjectNameEXT");
     setName(context->logicalDevice, &name);
     vkBindBufferMemory(context->logicalDevice, buffer, memory, 0);
 }
@@ -164,7 +208,6 @@ inline void submit_command_buffer(GpuContext *ctx, VkCommandBuffer commandBuffer
     vkWaitForFences(ctx->logicalDevice, 1, &fence, VK_TRUE, UINT32_MAX);
     vkResetFences(ctx->logicalDevice, 1, &fence);
     vkDestroyFence(ctx->logicalDevice, fence, nullptr);
-
 }
 
 inline void submit_to_queue(GpuContext *context, VkCommandBuffer &commandBuffer) {
@@ -223,5 +266,38 @@ inline VkShaderModule create_shader_module(VkDevice logicalDevice, const char *f
              "Failed to create the Shader Module");
     return module;
 }
+inline void record_image_transition(VkCommandBuffer &commandBuffer, VkImage &image, VkImageLayout prevLayout,
+                               VkImageLayout newLayout,
+                               VkPipelineStageFlags srcFlag, VkAccessFlags srcAccess, VkPipelineStageFlags dstFlag,
+                               VkAccessFlags dstAccess) {
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = prevLayout;
+    barrier.newLayout = newLayout;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
 
+    vkCmdPipelineBarrier(commandBuffer,
+                         srcFlag, dstFlag, 0,
+                         0, nullptr,
+                         0, nullptr,
+                         1, &barrier);
+}
+inline void transition_image(GpuContext* ctx, VkImage &image, VkImageLayout prevLayout,
+                               VkImageLayout newLayout,
+                               VkPipelineStageFlags srcFlag, VkAccessFlags srcAccess, VkPipelineStageFlags dstFlag,
+                               VkAccessFlags dstAccess) {
+    VkCommandBuffer buffer = start_command_buffer(ctx);
+    record_image_transition(buffer, image, prevLayout, newLayout, srcFlag, srcAccess, dstFlag, dstAccess);
+    submit_to_queue(ctx, buffer);
+
+}
 #endif //THIYART_UTIL_H

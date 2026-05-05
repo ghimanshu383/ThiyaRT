@@ -1,0 +1,13 @@
+#version 450
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(set = 0, binding = 0, rgba8) writeonly uniform image2D outImage;
+
+void main() {
+    uint kx = gl_GlobalInvocationID.x;
+    uint ky = gl_GlobalInvocationID.y;
+    uvec2 imageSize = imageSize(outImage);
+    if (kx >= imageSize.x || ky >= imageSize.y) return;
+    ivec2 pixels = ivec2(kx, ky);
+    imageStore(outImage, pixels, vec4(1, 0, 0, 1));
+}

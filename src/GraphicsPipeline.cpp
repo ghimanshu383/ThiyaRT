@@ -4,12 +4,20 @@
 #include <array>
 #include "GraphicsPipeline.h"
 
+#include "compute/ComputeRT.h"
+
 namespace te {
     GraphicsPipeline::GraphicsPipeline(const std::shared_ptr<GpuContext> &gpuContext,
-                                       const std::shared_ptr<SwapchainContext> &swapContext) :
-            m_ctx{gpuContext}, m_swap_ctx{swapContext} {
+                                       const std::shared_ptr<SwapchainContext> &swapContext) : m_ctx{gpuContext},
+        m_swap_ctx{swapContext} {
+        m_desSets.resize(m_swap_ctx->imageCount);
+        m_computeRT = std::make_shared<ComputeRT>(m_ctx.get(), m_swap_ctx.get(),
+                                                  R"(D:\rayTracing\ThiyaRT\shaders\baseRT.comp.spv)");
+        vkDeviceWaitIdle(m_ctx->logicalDevice);
+        create_sampler(m_ctx.get(), m_sampler);
         create_render_pass();
         create_frame_buffers();
+        setup_descriptors();
         create_pipeline();
         create_command_buffer();
         setup_display_quads();
@@ -94,8 +102,8 @@ namespace te {
     }
 
     void GraphicsPipeline::create_pipeline() {
-        std::string vertexShaderFile = R"(D:\cProjects\ThiyaRT\shaders\default.vert.spv)";
-        std::string fragShaderFile = R"(D:\cProjects\ThiyaRT\shaders\default.frag.spv)";
+        std::string vertexShaderFile = R"(D:\rayTracing\ThiyaRT\shaders\default.vert.spv)";
+        std::string fragShaderFile = R"(D:\rayTracing\ThiyaRT\shaders\default.frag.spv)";
 
         VkShaderModule vertexShaderModule = create_shader_module(m_ctx->logicalDevice, vertexShaderFile.c_str());
         VkShaderModule fragmentShaderModule = create_shader_module(m_ctx->logicalDevice, fragShaderFile.c_str());
@@ -155,7 +163,7 @@ namespace te {
         colorAttribute.offset = offsetof(Vertex, uv);
 
         std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{
-                positionAttribute, colorAttribute
+            positionAttribute, colorAttribute
         };
         VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{};
         vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -206,6 +214,8 @@ namespace te {
 
         VkPipelineLayoutCreateInfo layoutCreateInfo{};
         layoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutCreateInfo.setLayoutCount = 1;
+        layoutCreateInfo.pSetLayouts = &m_desLayout;
 
         VK_CHECK(vkCreatePipelineLayout(m_ctx->logicalDevice, &layoutCreateInfo, nullptr, &m_layout),
                  "Failed to create the graphics pipeline layout");
@@ -232,6 +242,65 @@ namespace te {
         vkDestroyShaderModule(m_ctx->logicalDevice, fragmentShaderModule, nullptr);
     }
 
+    void GraphicsPipeline::setup_descriptors() {
+        VkDescriptorSetLayoutBinding bindingOutImage{};
+        bindingOutImage.binding = 0;
+        bindingOutImage.descriptorCount = 1;
+        bindingOutImage.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindingOutImage.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+        List<VkDescriptorSetLayoutBinding> bindings{bindingOutImage};
+
+        VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
+        layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutCreateInfo.bindingCount = bindings.size();
+        layoutCreateInfo.pBindings = bindings.data();
+        VK_CHECK(vkCreateDescriptorSetLayout(m_ctx->logicalDevice, &layoutCreateInfo, nullptr, &m_desLayout),
+                 "Failed to create the descriptor set layout for the graphics");
+
+        VkDescriptorPoolSize poolSizeStorage{};
+        poolSizeStorage.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizeStorage.descriptorCount = m_swap_ctx->imageCount;
+
+        List<VkDescriptorPoolSize> poolSizes{poolSizeStorage};
+
+        VkDescriptorPoolCreateInfo descriptorPoolCreateInfo{};
+        descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptorPoolCreateInfo.maxSets = m_swap_ctx->imageCount;
+        descriptorPoolCreateInfo.poolSizeCount = poolSizes.size();
+        descriptorPoolCreateInfo.pPoolSizes = poolSizes.data();
+        VK_CHECK(vkCreateDescriptorPool(m_ctx->logicalDevice, &descriptorPoolCreateInfo, nullptr, &m_desPool),
+                 "Failed to create the descriptor Pool for graphics");
+        List<VkDescriptorSetLayout> layouts(m_swap_ctx->imageCount, m_desLayout);
+        VkDescriptorSetAllocateInfo allocateInfo{};
+        allocateInfo.descriptorPool = m_desPool;
+        allocateInfo.descriptorSetCount = m_swap_ctx->imageCount;
+        allocateInfo.pSetLayouts = layouts.data();
+        allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        vkAllocateDescriptorSets(m_ctx->logicalDevice, &allocateInfo, m_desSets.data());
+        LOG_INFO("The Descriptor sets allocated and configured successfully");
+        for (int i = 0; i < m_swap_ctx->imageCount; i++) {
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = m_computeRT->get_storage_image_view();
+            imageInfo.sampler = m_sampler;
+
+            VkWriteDescriptorSet writeImageInfo{};
+            writeImageInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeImageInfo.dstBinding = 0;
+            writeImageInfo.dstSet = m_desSets[i];
+            writeImageInfo.dstArrayElement = 0;
+            writeImageInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writeImageInfo.descriptorCount = 1;
+            writeImageInfo.pImageInfo = &imageInfo;
+
+            List<VkWriteDescriptorSet> writes{writeImageInfo};
+
+            vkUpdateDescriptorSets(m_ctx->logicalDevice, writes.size(), writes.data(), 0, nullptr);
+            LOG_INFO("Descriptor set written correctly");
+        }
+    }
+
     void GraphicsPipeline::begin_frame(VkCommandBuffer &commandBuffer) {
         vkWaitForFences(m_ctx->logicalDevice, 1, &m_render_fence, VK_TRUE, UINT64_MAX);
         vkResetFences(m_ctx->logicalDevice, 1, &m_render_fence);
@@ -242,6 +311,7 @@ namespace te {
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        m_computeRT->compute(commandBuffer, m_image_count);
 
         VkClearValue clearValue{};
         clearValue.color = {{.2, .2, .2, .2}};
@@ -260,6 +330,8 @@ namespace te {
         VkDeviceSize offset{};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_vertBuffer, &offset);
         vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_layout, 0, 1,
+                                &m_desSets[m_image_count], 0, nullptr);
         vkCmdDrawIndexed(commandBuffer, 6, 1, 0, 0, 0);
     }
 
@@ -299,14 +371,14 @@ namespace te {
 
     void GraphicsPipeline::setup_display_quads() {
         std::vector<Vertex> vert{
-                {{-1, -1, 0}, {0, 0}},
-                {{-1, 1,  0}, {0, 1}},
-                {{1,  1,  0}, {1, 1}},
-                {{1,  -1, 0}, {1, 0}}
+            {{-1, -1, 0}, {0, 0}},
+            {{-1, 1, 0}, {0, 1}},
+            {{1, 1, 0}, {1, 1}},
+            {{1, -1, 0}, {1, 0}}
         };
         std::vector<std::uint32_t> indices{
-                0, 1, 2,
-                0, 2, 3
+            0, 1, 2,
+            0, 2, 3
         };
         create_buffer(m_ctx.get(), m_vertBufferStaging, m_vertBufferMemoryStaging,
                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -345,6 +417,7 @@ namespace te {
 
         LOG_INFO("Display Quad Created Successfully");
     }
+
     void GraphicsPipeline::clean_up() {
         vkDeviceWaitIdle(m_ctx->logicalDevice);
         vkDestroySemaphore(m_ctx->logicalDevice, m_image_semaphore, nullptr);
@@ -356,12 +429,11 @@ namespace te {
         vkDestroyBuffer(m_ctx->logicalDevice, m_indexBuffer, nullptr);
         vkFreeMemory(m_ctx->logicalDevice, m_indexBufferMemory, nullptr);
 
-        for(int i = 0 ; i < m_swap_ctx->imageCount ; i++) {
+        for (int i = 0; i < m_swap_ctx->imageCount; i++) {
             vkDestroyFramebuffer(m_ctx->logicalDevice, m_frame_buffers[i], nullptr);
         }
         vkDestroyPipeline(m_ctx->logicalDevice, m_pipeline, nullptr);
         vkDestroyPipelineLayout(m_ctx->logicalDevice, m_layout, nullptr);
         vkDestroyRenderPass(m_ctx->logicalDevice, m_render_pass, nullptr);
-
     }
 }

@@ -167,8 +167,7 @@ namespace te {
             createInfo.pQueuePriorities = &priority;
             infos.push_back(createInfo);
         }
-        List<const char *> requiredExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-                                                 VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME};
+        List<const char *> requiredExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
         VkDeviceCreateInfo deviceCreateInfo{};
         deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         deviceCreateInfo.enabledExtensionCount = requiredExtensions.size();

@@ -8,10 +8,13 @@
 #include "Util.h"
 
 namespace te {
+    class ComputeRT;
+
     class GraphicsPipeline {
     private:
         std::shared_ptr<GpuContext> m_ctx = nullptr;
         std::shared_ptr<SwapchainContext> m_swap_ctx = nullptr;
+        std::shared_ptr<ComputeRT> m_computeRT = nullptr;
         std::uint32_t m_image_count = 0;
         VkRenderPass m_render_pass = VK_NULL_HANDLE;
         VkPipeline m_pipeline = VK_NULL_HANDLE;
@@ -33,10 +36,15 @@ namespace te {
         VkBuffer m_indexBuffer;
         VkDeviceMemory m_indexBufferMemory;
 
+        VkDescriptorSetLayout m_desLayout;
+        VkDescriptorPool m_desPool;
+        List<VkDescriptorSet> m_desSets;
+        VkSampler m_sampler;
+
         void create_render_pass();
 
         void create_pipeline();
-
+        void setup_descriptors();
         void create_frame_buffers();
         void create_command_buffer();
         void setup_display_quads();
