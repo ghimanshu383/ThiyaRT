@@ -27,7 +27,7 @@ namespace te {
         ComputeRT(GpuContext* ctx, SwapchainContext* swapCtx, const char* shaderPath);
         const VkImageView& get_storage_image_view() const { return m_storageImageView;}
         void compute(VkCommandBuffer& commandBuffer, std::uint32_t currImage);
-        void clean_up() const;
+        void clean_up();
     };
 }
 #endif //COMPUTERT_H
