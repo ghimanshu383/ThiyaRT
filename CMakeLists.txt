@@ -35,11 +35,11 @@ FetchContent_MakeAvailable(spdlog)
 
 target_include_directories(ThiyaRT PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-        "D:/VulkanSDK/Include"
+        "D:/VulkanSDK/1.3.283.0/Include"
         ${CMAKE_CURRENT_SOURCE_DIR}/ext/glm
 )
 target_link_libraries(ThiyaRT PUBLIC
         spdlog
         glfw
-        "D:/VulkanSDK/Lib/vulkan-1.lib"
+        "D:/VulkanSDK/1.3.283.0/Lib/vulkan-1.lib"
 )

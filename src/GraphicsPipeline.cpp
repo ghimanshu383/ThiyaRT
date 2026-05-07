@@ -12,7 +12,7 @@ namespace te {
         m_swap_ctx{swapContext} {
         m_desSets.resize(m_swap_ctx->imageCount);
         m_computeRT = std::make_shared<ComputeRT>(m_ctx.get(), m_swap_ctx.get(),
-                                                  R"(D:\rayTracing\ThiyaRT\shaders\baseRT.comp.spv)");
+                                                  R"(D:\cProjects\ThiyaRT\shaders\baseRT.comp.spv)");
         vkDeviceWaitIdle(m_ctx->logicalDevice);
         create_sampler(m_ctx.get(), m_sampler);
         create_render_pass();
@@ -102,8 +102,8 @@ namespace te {
     }
 
     void GraphicsPipeline::create_pipeline() {
-        std::string vertexShaderFile = R"(D:\rayTracing\ThiyaRT\shaders\default.vert.spv)";
-        std::string fragShaderFile = R"(D:\rayTracing\ThiyaRT\shaders\default.frag.spv)";
+        std::string vertexShaderFile = R"(D:\cProjects\ThiyaRT\shaders\default.vert.spv)";
+        std::string fragShaderFile = R"(D:\cProjects\ThiyaRT\shaders\default.frag.spv)";
 
         VkShaderModule vertexShaderModule = create_shader_module(m_ctx->logicalDevice, vertexShaderFile.c_str());
         VkShaderModule fragmentShaderModule = create_shader_module(m_ctx->logicalDevice, fragShaderFile.c_str());
@@ -420,6 +420,8 @@ namespace te {
 
     void GraphicsPipeline::clean_up() {
         vkDeviceWaitIdle(m_ctx->logicalDevice);
+        m_computeRT->clean_up();
+
         vkDestroySemaphore(m_ctx->logicalDevice, m_image_semaphore, nullptr);
         vkDestroySemaphore(m_ctx->logicalDevice, m_image_render_finish, nullptr);
         vkDestroyFence(m_ctx->logicalDevice, m_render_fence, nullptr);
@@ -435,5 +437,9 @@ namespace te {
         vkDestroyPipeline(m_ctx->logicalDevice, m_pipeline, nullptr);
         vkDestroyPipelineLayout(m_ctx->logicalDevice, m_layout, nullptr);
         vkDestroyRenderPass(m_ctx->logicalDevice, m_render_pass, nullptr);
+
+        vkDestroyDescriptorSetLayout(m_ctx->logicalDevice, m_desLayout, nullptr);
+        vkDestroyDescriptorPool(m_ctx->logicalDevice, m_desPool, nullptr);
+        vkDestroySampler(m_ctx->logicalDevice, m_sampler, nullptr);
     }
 }
