@@ -49,6 +49,7 @@ namespace te {
             ),
             "Failed to create the compute pipeline");
         LOG_INFO("The Compute Pipeline Create successfully");
+        vkDestroyShaderModule(m_ctx->logicalDevice, module, nullptr);
     }
 
     void ComputeRT::setup_descriptors() {
@@ -123,5 +124,14 @@ namespace te {
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    }
+    void ComputeRT::clean_up() const{
+        vkDestroyPipeline(m_ctx->logicalDevice, m_pipeline, nullptr);
+        vkDestroyPipelineLayout(m_ctx->logicalDevice, m_pipelineLayout, nullptr);
+        vkDestroyDescriptorSetLayout(m_ctx->logicalDevice, m_descriptorSetLayout, nullptr);
+        vkDestroyDescriptorPool(m_ctx->logicalDevice, m_descriptorPool, nullptr);
+        vkDestroyImageView(m_ctx->logicalDevice, m_storageImageView, nullptr);
+        vkDestroyImage(m_ctx->logicalDevice, m_storageImage, nullptr);
+        vkFreeMemory(m_ctx->logicalDevice, m_storageImageMemory, nullptr);
     }
 }

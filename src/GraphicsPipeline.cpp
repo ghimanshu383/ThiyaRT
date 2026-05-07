@@ -13,7 +13,6 @@ namespace te {
         m_desSets.resize(m_swap_ctx->imageCount);
         m_computeRT = std::make_shared<ComputeRT>(m_ctx.get(), m_swap_ctx.get(),
                                                   R"(D:\rayTracing\ThiyaRT\shaders\baseRT.comp.spv)");
-        vkDeviceWaitIdle(m_ctx->logicalDevice);
         create_sampler(m_ctx.get(), m_sampler);
         create_render_pass();
         create_frame_buffers();
@@ -418,8 +417,10 @@ namespace te {
         LOG_INFO("Display Quad Created Successfully");
     }
 
-    void GraphicsPipeline::clean_up() {
+    void GraphicsPipeline::clean_up() const {
         vkDeviceWaitIdle(m_ctx->logicalDevice);
+        m_computeRT->clean_up();
+
         vkDestroySemaphore(m_ctx->logicalDevice, m_image_semaphore, nullptr);
         vkDestroySemaphore(m_ctx->logicalDevice, m_image_render_finish, nullptr);
         vkDestroyFence(m_ctx->logicalDevice, m_render_fence, nullptr);
@@ -432,8 +433,11 @@ namespace te {
         for (int i = 0; i < m_swap_ctx->imageCount; i++) {
             vkDestroyFramebuffer(m_ctx->logicalDevice, m_frame_buffers[i], nullptr);
         }
+        vkDestroySampler(m_ctx->logicalDevice, m_sampler, nullptr);
         vkDestroyPipeline(m_ctx->logicalDevice, m_pipeline, nullptr);
         vkDestroyPipelineLayout(m_ctx->logicalDevice, m_layout, nullptr);
+        vkDestroyDescriptorSetLayout(m_ctx->logicalDevice, m_desLayout, nullptr);
+        vkDestroyDescriptorPool(m_ctx->logicalDevice, m_desPool, nullptr);
         vkDestroyRenderPass(m_ctx->logicalDevice, m_render_pass, nullptr);
     }
 }

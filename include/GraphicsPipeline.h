@@ -57,7 +57,7 @@ namespace te {
     public:
         GraphicsPipeline(const std::shared_ptr<GpuContext>& gpuContext, const std::shared_ptr<SwapchainContext>& swapContext);
         void render();
-        void clean_up();
+        void clean_up() const;
 
     };
 }
