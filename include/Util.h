@@ -27,7 +27,10 @@ using List = std::vector<T>;
 
 constexpr std::uint32_t WIN_WIDTH = 800;
 constexpr uint32_t WIN_HEIGHT = 600;
-
+constexpr std::uint32_t SAMPLES = 100;
+struct FRAME_PUSH_STRUCT {
+    std::uint32_t sampleCount;
+};
 struct Vertex {
     glm::vec3 pos;
     glm::vec2 uv;

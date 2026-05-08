@@ -12,7 +12,7 @@ namespace te {
         m_swap_ctx{swapContext} {
         m_desSets.resize(m_swap_ctx->imageCount);
         m_computeRT = std::make_shared<ComputeRT>(m_ctx.get(), m_swap_ctx.get(),
-                                                  R"(D:\cProjects\ThiyaRT\shaders\baseRT.comp.spv)");
+                                                  R"(D:\rayTracing\ThiyaRT\shaders\baseRT.comp.spv)");
         vkDeviceWaitIdle(m_ctx->logicalDevice);
         create_sampler(m_ctx.get(), m_sampler);
         create_render_pass();

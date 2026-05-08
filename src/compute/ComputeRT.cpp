@@ -15,9 +15,9 @@ namespace te {
     void ComputeRT::create_image_and_sampler() {
         create_image(m_ctx, m_storageImage, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT,
                      m_storageImageMemory,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_FORMAT_R8G8B8A8_UNORM, m_swapCtx->extends.width,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_FORMAT_R32G32B32A32_SFLOAT, m_swapCtx->extends.width,
                      m_swapCtx->extends.height, "Compute Storage Image");
-        create_image_view(m_ctx->logicalDevice, m_storageImage, m_storageImageView, VK_FORMAT_R8G8B8A8_UNORM);
+        create_image_view(m_ctx->logicalDevice, m_storageImage, m_storageImageView, VK_FORMAT_R32G32B32A32_SFLOAT);
         transition_image(m_ctx, m_storageImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_ACCESS_SHADER_READ_BIT);
@@ -25,16 +25,24 @@ namespace te {
 
     void ComputeRT::setup_pipeline() {
         VkShaderModule module = create_shader_module(m_ctx->logicalDevice, m_shader_path);
-        VkPipelineLayoutCreateInfo layout_create_info{};
-        layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layout_create_info.setLayoutCount = 1;
-        layout_create_info.pSetLayouts = &m_descriptorSetLayout;
 
         VkPipelineShaderStageCreateInfo computeStage{};
         computeStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         computeStage.module = module;
         computeStage.pName = "main";
         computeStage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        VkPushConstantRange pushRange{};
+        pushRange.offset = 0;
+        pushRange.size = sizeof(FRAME_PUSH_STRUCT);
+        pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        VkPipelineLayoutCreateInfo layout_create_info{};
+        layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_create_info.setLayoutCount = 1;
+        layout_create_info.pSetLayouts = &m_descriptorSetLayout;
+        layout_create_info.pushConstantRangeCount = 1;
+        layout_create_info.pPushConstantRanges = &pushRange;
 
         VK_CHECK(vkCreatePipelineLayout(m_ctx->logicalDevice, &layout_create_info, nullptr, &m_pipelineLayout),
                  "Failed to create the pipeline layout for the compute pipeline");
@@ -45,10 +53,10 @@ namespace te {
         computePipelineCreateInfo.basePipelineIndex = 0;
 
         VK_CHECK(
-                vkCreateComputePipelines(m_ctx->logicalDevice, nullptr, 1, &computePipelineCreateInfo, nullptr,
-                                         &m_pipeline
-                ),
-                "Failed to create the compute pipeline");
+            vkCreateComputePipelines(m_ctx->logicalDevice, nullptr, 1, &computePipelineCreateInfo, nullptr,
+                &m_pipeline
+            ),
+            "Failed to create the compute pipeline");
         LOG_INFO("The Compute Pipeline Create successfully");
         vkDestroyShaderModule(m_ctx->logicalDevice, module, nullptr);
     }
@@ -120,7 +128,18 @@ namespace te {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1,
                                 &m_descriptorSets[currImage], 0, nullptr);
-        vkCmdDispatch(commandBuffer, (m_swapCtx->extends.width + 15) / 16, (m_swapCtx->extends.height + 15) / 16, 1);
+        for (int i = 0; i < SAMPLES; i++) {
+            FRAME_PUSH_STRUCT frameInfo{};
+            frameInfo.sampleCount = i + 1;
+            vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                               sizeof(FRAME_PUSH_STRUCT), &frameInfo);
+            vkCmdDispatch(commandBuffer, (m_swapCtx->extends.width + 15) / 16, (m_swapCtx->extends.height + 15) / 16,
+                          1);
+            record_image_transition(commandBuffer, m_storageImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+        }
+
         record_image_transition(commandBuffer, m_storageImage, VK_IMAGE_LAYOUT_GENERAL,
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
