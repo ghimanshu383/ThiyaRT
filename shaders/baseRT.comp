@@ -2,7 +2,8 @@
 
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout (set = 0, binding = 0, rgba32f) uniform image2D outImage;
-layout(push_constant) uniform FrameInfo {
+
+layout (push_constant) uniform FrameInfo {
     uint frameCount;
 } frameInfo;
 
@@ -23,6 +24,15 @@ struct HitRecord {
     bool frontFace;
 };
 
+struct Interval {
+    float max;
+    float min;
+};
+
+int MAX_OJBECTS = 100;
+layout (set = 0, binding = 1) uniform Scene {
+    Sphere objects[100];
+} scene;
 
 uint pcg(inout uint seed) {
     seed = seed * 747796405u + 2891336453u;
@@ -48,13 +58,16 @@ void set_face_normal(inout HitRecord record, vec3 dir) {
     record.frontFace = val < 0;
     record.normal = record.frontFace ? record.normal : record.normal * -1;
 }
+bool check_interval_constraint(Interval interval, float d) {
+    return (interval.min < d && interval.max > d);
+}
 vec3 scatter_random(vec3 normal, inout uint seed) {
     vec3 random_vec = normalize(vec3(rand(seed), rand(seed), rand(seed)));
     random_vec = dot(normal, random_vec) > 0 ? random_vec : -1 * random_vec;
     return random_vec;
 
 }
-int hit_sphere(Ray ray, Sphere object, inout HitRecord record) {
+int hit_sphere(Ray ray, Sphere object, Interval interval, inout HitRecord record) {
     vec3 oc = ray.start - object.center;
     float b = 2.0 * dot(oc, ray.direction);
     float a = dot(ray.direction, ray.direction);
@@ -65,10 +78,11 @@ int hit_sphere(Ray ray, Sphere object, inout HitRecord record) {
         return 0;
     }
     float t = (-b - sqrt(derivative)) / (2.0 * a);
-    if (t < .001) {
+    if (!check_interval_constraint(interval, t)) {
         t = (-b + sqrt(derivative)) / (2.0 * a);
+        if(!check_interval_constraint(interval, t)) return 0;
     }
-    if (t < .001) return 0;
+   // if (t < .001) return 0;
 
     record.p = get_ray_at(ray, t);
     record.t = t;
@@ -77,6 +91,9 @@ int hit_sphere(Ray ray, Sphere object, inout HitRecord record) {
     return 1;
 }
 
+int check_hit_scene_objects(inout Ray ray, Interval ray_interval, inout HitRecord hitRecord) {
+
+}
 void main() {
     uint kx = gl_GlobalInvocationID.x;
     uint ky = gl_GlobalInvocationID.y;
@@ -101,10 +118,10 @@ void main() {
     vec3 throuput = vec3(1);
     vec3 atten = vec3(1.f);
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 50; i++) {
         HitRecord record;
         record.t = 0;
-        if (hit_sphere(ray, sphere, record) == 1) {
+        if (hit_sphere(ray, scene.objects[0], record) == 1) {
             ray.start = record.p + (record.normal * .001);
             ray.direction = scatter_random(record.normal, seed);
             atten *= .5f;

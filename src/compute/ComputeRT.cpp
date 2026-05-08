@@ -6,6 +6,12 @@
 namespace te {
     ComputeRT::ComputeRT(GpuContext *ctx, SwapchainContext *swapCtx,
                          const char *shaderPath) : m_ctx(ctx), m_swapCtx(swapCtx), m_shader_path(shaderPath) {
+        Sphere sphereOne {};
+        sphereOne.geometry = glm::vec4{0, 0, 0, 1};
+        m_scene[0] = sphereOne;
+        m_objectCount++;
+
+        setup_scene();
         m_descriptorSets.resize(m_swapCtx->imageCount);
         create_image_and_sampler();
         setup_descriptors();
@@ -53,10 +59,10 @@ namespace te {
         computePipelineCreateInfo.basePipelineIndex = 0;
 
         VK_CHECK(
-            vkCreateComputePipelines(m_ctx->logicalDevice, nullptr, 1, &computePipelineCreateInfo, nullptr,
-                &m_pipeline
-            ),
-            "Failed to create the compute pipeline");
+                vkCreateComputePipelines(m_ctx->logicalDevice, nullptr, 1, &computePipelineCreateInfo, nullptr,
+                                         &m_pipeline
+                ),
+                "Failed to create the compute pipeline");
         LOG_INFO("The Compute Pipeline Create successfully");
         vkDestroyShaderModule(m_ctx->logicalDevice, module, nullptr);
     }
@@ -68,7 +74,14 @@ namespace te {
         bindingOutImage.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
         bindingOutImage.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 
-        List<VkDescriptorSetLayoutBinding> bindings{bindingOutImage};
+
+        VkDescriptorSetLayoutBinding bindingScene{};
+        bindingScene.binding = 1;
+        bindingScene.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindingScene.descriptorCount = 1;
+        bindingScene.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        List<VkDescriptorSetLayoutBinding> bindings{bindingOutImage, bindingScene};
 
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
         layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -81,7 +94,11 @@ namespace te {
         poolSizeStorage.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         poolSizeStorage.descriptorCount = m_swapCtx->imageCount;
 
-        List<VkDescriptorPoolSize> poolSizes{poolSizeStorage};
+        VkDescriptorPoolSize poolUniform{};
+        poolSizeStorage.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizeStorage.descriptorCount = m_swapCtx->imageCount;
+
+        List<VkDescriptorPoolSize> poolSizes{poolSizeStorage, poolUniform};
 
         VkDescriptorPoolCreateInfo descriptorPoolCreateInfo{};
         descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -113,7 +130,20 @@ namespace te {
             writeImageInfo.descriptorCount = 1;
             writeImageInfo.pImageInfo = &imageInfo;
 
-            List<VkWriteDescriptorSet> writes{writeImageInfo};
+            VkDescriptorBufferInfo sceneBuffer {};
+            sceneBuffer.offset = 0;
+            sceneBuffer.range = sizeof (Sphere) * MAX_OBJECTS;
+            sceneBuffer.buffer = m_sceneBuffer;
+            VkWriteDescriptorSet  writeScene  {};
+            writeScene.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeScene.descriptorCount = 1;
+            writeScene.dstBinding = 1;
+            writeScene.dstArrayElement = 0;
+            writeScene.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writeScene.dstSet = m_descriptorSets[i];
+            writeScene.pBufferInfo = &sceneBuffer;
+
+            List<VkWriteDescriptorSet> writes{writeImageInfo, writeScene};
 
             vkUpdateDescriptorSets(m_ctx->logicalDevice, writes.size(), writes.data(), 0, nullptr);
             LOG_INFO("Descriptor set written correctly");
@@ -131,6 +161,7 @@ namespace te {
         for (int i = 0; i < SAMPLES; i++) {
             FRAME_PUSH_STRUCT frameInfo{};
             frameInfo.sampleCount = i + 1;
+            frameInfo.objectCount = m_objectCount;
             vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                                sizeof(FRAME_PUSH_STRUCT), &frameInfo);
             vkCmdDispatch(commandBuffer, (m_swapCtx->extends.width + 15) / 16, (m_swapCtx->extends.height + 15) / 16,
@@ -154,5 +185,23 @@ namespace te {
         vkDestroyImageView(m_ctx->logicalDevice, m_storageImageView, nullptr);
         vkDestroyImage(m_ctx->logicalDevice, m_storageImage, nullptr);
         vkFreeMemory(m_ctx->logicalDevice, m_storageImageMemory, nullptr);
+        vkDestroyBuffer(m_ctx->logicalDevice, m_sceneStagingBuffer, nullptr);
+        vkFreeMemory(m_ctx->logicalDevice, m_sceneStagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_ctx->logicalDevice, m_sceneBuffer, nullptr);
+        vkFreeMemory(m_ctx->logicalDevice, m_sceneBufferMemory, nullptr);
+    }
+
+    void ComputeRT::setup_scene() {
+        VkDeviceSize sceneSize = sizeof (Sphere) * MAX_OBJECTS;
+        create_buffer(m_ctx, m_sceneStagingBuffer, m_sceneStagingBufferMemory, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      sceneSize);
+        create_buffer(m_ctx, m_sceneBuffer, m_sceneBufferMemory, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof (Sphere) * MAX_OBJECTS);
+        void* data;
+        vkMapMemory(m_ctx->logicalDevice, m_sceneStagingBufferMemory, 0, sceneSize, 0, &data);
+        memcpy(data, m_scene, sceneSize);
+        vkUnmapMemory(m_ctx->logicalDevice, m_sceneStagingBufferMemory);
+        copy_buffer_to_buffer(m_ctx, m_sceneStagingBuffer, m_sceneBuffer, sceneSize);
     }
 }

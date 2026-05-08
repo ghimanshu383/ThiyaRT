@@ -27,15 +27,20 @@ using List = std::vector<T>;
 
 constexpr std::uint32_t WIN_WIDTH = 800;
 constexpr uint32_t WIN_HEIGHT = 600;
-constexpr std::uint32_t SAMPLES = 100;
+constexpr std::uint32_t SAMPLES = 500;
+constexpr int MAX_OBJECTS = 100;
 struct FRAME_PUSH_STRUCT {
     std::uint32_t sampleCount;
+    std::uint32_t objectCount;
 };
 struct Vertex {
     glm::vec3 pos;
     glm::vec2 uv;
 };
 
+struct Sphere {
+    glm::vec4 geometry;
+};
 struct QueueFamilies {
     int32_t graphicsQueueIndex = -1;
     int32_t presentationQueueIndex = -1;
