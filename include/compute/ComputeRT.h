@@ -24,7 +24,7 @@ namespace te {
         VkSampler m_sampler;
 
         int m_objectCount = 0;
-        Sphere m_scene [MAX_OBJECTS];
+        Sphere m_scene[MAX_OBJECTS];
         List<BVHNode> m_tree {};
         VkBuffer m_sceneStagingBuffer{};
         VkDeviceMemory m_sceneStagingBufferMemory{};

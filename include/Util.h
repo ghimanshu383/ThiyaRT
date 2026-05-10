@@ -57,13 +57,19 @@ struct Sphere {
     glm::vec4 properties;
     AABB box;
 };
-
+struct Primitive {
+    int type;
+    int index;
+    AABB box;
+};
 struct BVHNode {
     AABB box;
     int internalIndex;
     int objectIndex = -1;
+    int objectType;
     int leftIndex;
     int rightIndex;
+    int pad[3];
 };
 
 inline double random_double() {
@@ -106,15 +112,15 @@ inline bool box_compare(AABB &a, AABB &b, int axis) {
     }
 }
 
-inline bool box_compare_x(Sphere &a, Sphere &b) {
+inline bool box_compare_x(Primitive &a, Primitive &b) {
     return box_compare(a.box, b.box, 0);
 }
 
-inline bool box_compare_y(Sphere &a, Sphere &b) {
+inline bool box_compare_y(Primitive &a, Primitive &b) {
     return box_compare(a.box, b.box, 1);
 }
 
-inline bool box_compare_z(Sphere &a, Sphere &b) {
+inline bool box_compare_z(Primitive &a, Primitive &b) {
     return box_compare(a.box, b.box, 2);
 }
 
@@ -133,39 +139,40 @@ inline void create_bounding_box_for_sphere(Sphere& sphere) {
     sphere.box = box;
 }
 
-inline BVHNode create_bvh_tree_nodes(List<BVHNode> &treeList, List<Sphere> &objects, int start, int end) {
+inline BVHNode create_bvh_tree_nodes(List<BVHNode> &treeList, List<Primitive> &objects, int start, int end) {
     BVHNode node{};
     int randomIndex = random_int(0, 2);
-    std::function<bool(Sphere &, Sphere &)> comparator =
+    std::function<bool(Primitive &, Primitive &)> comparator =
             randomIndex == 0 ? box_compare_x : randomIndex == 1 ? box_compare_y : box_compare_z;
 
     int span = end - start;
-    size_t currSize = treeList.size();
 
-    node.internalIndex = currSize;
+    treeList.push_back(node);
+    size_t currIndex = treeList.size() - 1;
+    treeList[currIndex].internalIndex = currIndex;
     if (span == 0) {
-        node.box = objects[start].box;
-        node.objectIndex = start;
-        node.leftIndex = -1;
-        node.rightIndex = -1;
+        treeList[currIndex].box = objects[start].box;
+        treeList[currIndex].objectIndex = objects[start].index;
+        treeList[currIndex].objectType = objects[start].type;
+        treeList[currIndex].leftIndex = -1;
+        treeList[currIndex].rightIndex = -1;
     } else if (span == 1) {
-        node.box = box_from(objects[start].box, objects[start + 1].box);
+        treeList[currIndex].box = box_from(objects[start].box, objects[start + 1].box);
         BVHNode left = create_bvh_tree_nodes(treeList, objects, start, start);
         BVHNode right = create_bvh_tree_nodes(treeList, objects, start + 1, start + 1);
-        node.leftIndex = left.internalIndex;
-        node.rightIndex = right.internalIndex;
+        treeList[currIndex].leftIndex = left.internalIndex;
+        treeList[currIndex].rightIndex = right.internalIndex;
     } else {
         std::sort(std::begin(objects) + start, std::begin(objects) + end, comparator);
         int mid = start + span / 2;
         BVHNode left = create_bvh_tree_nodes(treeList, objects, start, mid);
-        BVHNode right = create_bvh_tree_nodes(treeList, objects, mid, end);
+        BVHNode right = create_bvh_tree_nodes(treeList, objects, mid + 1, end);
 
-        node.leftIndex = left.internalIndex;
-        node.rightIndex = right.internalIndex;
-        node.box = box_from(left.box, right.box);
+        treeList[currIndex].leftIndex = left.internalIndex;
+        treeList[currIndex].rightIndex = right.internalIndex;
+        treeList[currIndex].box = box_from(left.box, right.box);
     }
-    treeList.emplace_back(node);
-    return node;
+    return treeList[currIndex];
 }
 
 struct Camera {

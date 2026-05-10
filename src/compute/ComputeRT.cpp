@@ -42,11 +42,15 @@ namespace te {
         m_scene[4] = sphereMetalRight;
         m_objectCount++;
 
-        List<Sphere> currSceneList{};
+        List<Primitive> primitiveList{};
         for (int i = 0; i < m_objectCount; i++) {
-            currSceneList.push_back(m_scene[i]);
+            primitiveList.push_back({0, i, m_scene[i].box});
         }
-        create_bvh_tree_nodes(m_tree, currSceneList, 0, currSceneList.size() - 1);
+        create_bvh_tree_nodes(m_tree, primitiveList, 0, primitiveList.size() - 1);
+        for (int i = 0; i < m_tree.size(); i++) {
+            printf("node %d: objectIndex=%d left=%d right=%d\n",
+                   i, m_tree[i].objectIndex, m_tree[i].leftIndex, m_tree[i].rightIndex);
+        }
         setup_scene();
         m_descriptorSets.resize(m_swapCtx->imageCount);
         create_image_and_sampler();
