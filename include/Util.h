@@ -13,6 +13,7 @@
 #include <vector>
 #include "spdlog/spdlog.h"
 #include <fstream>
+#include <algorithm>
 #include "glm.hpp"
 
 #define LOG_INFO(M, ...) spdlog::info(M, ##__VA_ARGS__)
@@ -27,20 +28,151 @@ using List = std::vector<T>;
 
 constexpr std::uint32_t WIN_WIDTH = 800;
 constexpr uint32_t WIN_HEIGHT = 600;
-constexpr std::uint32_t SAMPLES = 500;
+constexpr std::uint32_t SAMPLES = 100;
 constexpr int MAX_OBJECTS = 100;
+constexpr int MAX_NODES = 2 * MAX_OBJECTS - 1;
 struct FRAME_PUSH_STRUCT {
     std::uint32_t sampleCount;
     std::uint32_t objectCount;
+    std::uint32_t treeCount;
 };
 struct Vertex {
     glm::vec3 pos;
     glm::vec2 uv;
 };
 
+struct Interval {
+    float min;
+    float max;
+    float pad[2];
+};
+struct AABB {
+    Interval x;
+    Interval y;
+    Interval z;
+};
 struct Sphere {
     glm::vec4 geometry;
+    glm::vec4 material;
+    glm::vec4 properties;
+    AABB box;
 };
+
+struct BVHNode {
+    AABB box;
+    int internalIndex;
+    int objectIndex = -1;
+    int leftIndex;
+    int rightIndex;
+};
+
+inline double random_double() {
+    return std::rand() / (RAND_MAX + 1.f);
+}
+
+inline double random_number(double min, double max) {
+    return min + (max - min) * random_double();
+}
+
+inline int random_int(int min, int max) {
+    return int(random_number(min, max + 1));
+}
+
+inline Interval get_bounding_interval(Interval a, Interval b) {
+    Interval inter{};
+    inter.min = fmin(a.min, b.min);
+    inter.max = fmax(a.max, b.max);
+    return inter;
+}
+
+inline AABB box_from(AABB &a, AABB &b) {
+    AABB box{};
+    box.x = get_bounding_interval(a.x, b.x);
+    box.y = get_bounding_interval(a.y, b.y);
+    box.z = get_bounding_interval(a.z, b.z);
+    return box;
+}
+
+inline bool box_compare(AABB &a, AABB &b, int axis) {
+    switch (axis) {
+        case 0 :
+            return a.x.min < b.x.min;
+        case 1 :
+            return a.y.min < b.y.min;
+        case 2 :
+            return a.z.min < b.z.min;
+        default :
+            return a.x.min < b.x.min;
+    }
+}
+
+inline bool box_compare_x(Sphere &a, Sphere &b) {
+    return box_compare(a.box, b.box, 0);
+}
+
+inline bool box_compare_y(Sphere &a, Sphere &b) {
+    return box_compare(a.box, b.box, 1);
+}
+
+inline bool box_compare_z(Sphere &a, Sphere &b) {
+    return box_compare(a.box, b.box, 2);
+}
+
+inline void create_bounding_box_for_sphere(Sphere& sphere) {
+    Interval X {};
+    Interval Y {};
+    Interval Z {};
+    X.min = sphere.geometry.x  - sphere.geometry.w;
+    X.max = sphere.geometry.x + sphere.geometry.w;
+    Y.min = sphere.geometry.y - sphere.geometry.w;
+    Y.max = sphere.geometry.y + sphere.geometry.w;
+    Z.min = sphere.geometry.z - sphere.geometry.w;
+    Z.max = sphere.geometry.z + sphere.geometry.w;
+
+    AABB box {X, Y, Z};
+    sphere.box = box;
+}
+
+inline BVHNode create_bvh_tree_nodes(List<BVHNode> &treeList, List<Sphere> &objects, int start, int end) {
+    BVHNode node{};
+    int randomIndex = random_int(0, 2);
+    std::function<bool(Sphere &, Sphere &)> comparator =
+            randomIndex == 0 ? box_compare_x : randomIndex == 1 ? box_compare_y : box_compare_z;
+
+    int span = end - start;
+    size_t currSize = treeList.size();
+
+    node.internalIndex = currSize;
+    if (span == 0) {
+        node.box = objects[start].box;
+        node.objectIndex = start;
+        node.leftIndex = -1;
+        node.rightIndex = -1;
+    } else if (span == 1) {
+        node.box = box_from(objects[start].box, objects[start + 1].box);
+        BVHNode left = create_bvh_tree_nodes(treeList, objects, start, start);
+        BVHNode right = create_bvh_tree_nodes(treeList, objects, start + 1, start + 1);
+        node.leftIndex = left.internalIndex;
+        node.rightIndex = right.internalIndex;
+    } else {
+        std::sort(std::begin(objects) + start, std::begin(objects) + end, comparator);
+        int mid = start + span / 2;
+        BVHNode left = create_bvh_tree_nodes(treeList, objects, start, mid);
+        BVHNode right = create_bvh_tree_nodes(treeList, objects, mid, end);
+
+        node.leftIndex = left.internalIndex;
+        node.rightIndex = right.internalIndex;
+        node.box = box_from(left.box, right.box);
+    }
+    treeList.emplace_back(node);
+    return node;
+}
+
+struct Camera {
+    glm::vec4 posAndFov;
+    glm::vec4 lookAt;
+};
+
 struct QueueFamilies {
     int32_t graphicsQueueIndex = -1;
     int32_t presentationQueueIndex = -1;
@@ -182,7 +314,7 @@ inline void create_buffer(GpuContext *context, VkBuffer &buffer, VkDeviceMemory 
     name.pObjectName = "BufferMemory";
 
     PFN_vkSetDebugUtilsObjectNameEXT setName = (PFN_vkSetDebugUtilsObjectNameEXT) vkGetDeviceProcAddr(
-        context->logicalDevice, "vkSetDebugUtilsObjectNameEXT");
+            context->logicalDevice, "vkSetDebugUtilsObjectNameEXT");
     setName(context->logicalDevice, &name);
     vkBindBufferMemory(context->logicalDevice, buffer, memory, 0);
 }
@@ -274,10 +406,11 @@ inline VkShaderModule create_shader_module(VkDevice logicalDevice, const char *f
              "Failed to create the Shader Module");
     return module;
 }
+
 inline void record_image_transition(VkCommandBuffer &commandBuffer, VkImage &image, VkImageLayout prevLayout,
-                               VkImageLayout newLayout,
-                               VkPipelineStageFlags srcFlag, VkAccessFlags srcAccess, VkPipelineStageFlags dstFlag,
-                               VkAccessFlags dstAccess) {
+                                    VkImageLayout newLayout,
+                                    VkPipelineStageFlags srcFlag, VkAccessFlags srcAccess, VkPipelineStageFlags dstFlag,
+                                    VkAccessFlags dstAccess) {
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = prevLayout;
@@ -299,13 +432,15 @@ inline void record_image_transition(VkCommandBuffer &commandBuffer, VkImage &ima
                          0, nullptr,
                          1, &barrier);
 }
-inline void transition_image(GpuContext* ctx, VkImage &image, VkImageLayout prevLayout,
-                               VkImageLayout newLayout,
-                               VkPipelineStageFlags srcFlag, VkAccessFlags srcAccess, VkPipelineStageFlags dstFlag,
-                               VkAccessFlags dstAccess) {
+
+inline void transition_image(GpuContext *ctx, VkImage &image, VkImageLayout prevLayout,
+                             VkImageLayout newLayout,
+                             VkPipelineStageFlags srcFlag, VkAccessFlags srcAccess, VkPipelineStageFlags dstFlag,
+                             VkAccessFlags dstAccess) {
     VkCommandBuffer buffer = start_command_buffer(ctx);
     record_image_transition(buffer, image, prevLayout, newLayout, srcFlag, srcAccess, dstFlag, dstAccess);
     submit_to_queue(ctx, buffer);
 
 }
+
 #endif //THIYART_UTIL_H

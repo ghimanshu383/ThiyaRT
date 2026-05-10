@@ -6,11 +6,47 @@
 namespace te {
     ComputeRT::ComputeRT(GpuContext *ctx, SwapchainContext *swapCtx,
                          const char *shaderPath) : m_ctx(ctx), m_swapCtx(swapCtx), m_shader_path(shaderPath) {
-        Sphere sphereOne {};
-        sphereOne.geometry = glm::vec4{0, 0, 0, 1};
+        Sphere sphereOne{};
+        sphereOne.geometry = glm::vec4{0, 0, -1, .5};
+        sphereOne.material = glm::vec4{0.1, 0.2, 0.5, 1};
+        create_bounding_box_for_sphere(sphereOne);
         m_scene[0] = sphereOne;
         m_objectCount++;
 
+        Sphere sphereGround{};
+        sphereGround.geometry = glm::vec4(0, -100.5, -1, 100);
+        sphereGround.material = glm::vec4(0.8, 0.8, 0.0, 1);
+        create_bounding_box_for_sphere(sphereGround);
+        m_scene[1] = sphereGround;
+        m_objectCount++;
+
+        Sphere sphereMetalLeft{};
+        sphereMetalLeft.geometry = glm::vec4{-1.0, 0.0, -1.0, .5};
+        sphereMetalLeft.material = glm::vec4{.9, .9, .9, 3};
+        sphereMetalLeft.properties = glm::vec4{0, (1.f / 1.5f), 0, 0};
+        create_bounding_box_for_sphere(sphereMetalLeft);
+        m_scene[2] = sphereMetalLeft;
+        m_objectCount++;
+        Sphere bubble{};
+        bubble.geometry = glm::vec4{-1, 0.f, -1.0, .4f};
+        bubble.material = glm::vec4{1, 1, 1, 3};
+        bubble.properties = glm::vec4{0, (1.5 / 1), 0, 0};
+        create_bounding_box_for_sphere(bubble);
+        m_scene[3] = bubble;
+        m_objectCount++;
+        Sphere sphereMetalRight{};
+        sphereMetalRight.geometry = glm::vec4{1.0, 0.0, -1.0, .5};
+        sphereMetalRight.material = glm::vec4{0.9, 0.9, 0.9, 2};
+        sphereMetalRight.properties = glm::vec4{.1, 0, 0, 0};
+        create_bounding_box_for_sphere(sphereMetalRight);
+        m_scene[4] = sphereMetalRight;
+        m_objectCount++;
+
+        List<Sphere> currSceneList{};
+        for (int i = 0; i < m_objectCount; i++) {
+            currSceneList.push_back(m_scene[i]);
+        }
+        create_bvh_tree_nodes(m_tree, currSceneList, 0, currSceneList.size() - 1);
         setup_scene();
         m_descriptorSets.resize(m_swapCtx->imageCount);
         create_image_and_sampler();
@@ -77,11 +113,18 @@ namespace te {
 
         VkDescriptorSetLayoutBinding bindingScene{};
         bindingScene.binding = 1;
-        bindingScene.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindingScene.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         bindingScene.descriptorCount = 1;
         bindingScene.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-        List<VkDescriptorSetLayoutBinding> bindings{bindingOutImage, bindingScene};
+        VkDescriptorSetLayoutBinding bindingTree{};
+        bindingTree.binding = 2;
+        bindingTree.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindingTree.descriptorCount = 1;
+        bindingTree.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+
+        List<VkDescriptorSetLayoutBinding> bindings{bindingOutImage, bindingScene, bindingTree};
 
         VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
         layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -95,8 +138,8 @@ namespace te {
         poolSizeStorage.descriptorCount = m_swapCtx->imageCount;
 
         VkDescriptorPoolSize poolUniform{};
-        poolSizeStorage.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizeStorage.descriptorCount = m_swapCtx->imageCount;
+        poolUniform.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        poolUniform.descriptorCount = 2 * m_swapCtx->imageCount;
 
         List<VkDescriptorPoolSize> poolSizes{poolSizeStorage, poolUniform};
 
@@ -105,6 +148,7 @@ namespace te {
         descriptorPoolCreateInfo.maxSets = m_swapCtx->imageCount;
         descriptorPoolCreateInfo.poolSizeCount = poolSizes.size();
         descriptorPoolCreateInfo.pPoolSizes = poolSizes.data();
+
         VK_CHECK(vkCreateDescriptorPool(m_ctx->logicalDevice, &descriptorPoolCreateInfo, nullptr, &m_descriptorPool),
                  "Failed to create the descriptor Pool for compute");
         List<VkDescriptorSetLayout> layouts(m_swapCtx->imageCount, m_descriptorSetLayout);
@@ -130,20 +174,33 @@ namespace te {
             writeImageInfo.descriptorCount = 1;
             writeImageInfo.pImageInfo = &imageInfo;
 
-            VkDescriptorBufferInfo sceneBuffer {};
+            VkDescriptorBufferInfo sceneBuffer{};
             sceneBuffer.offset = 0;
-            sceneBuffer.range = sizeof (Sphere) * MAX_OBJECTS;
+            sceneBuffer.range = sizeof(Sphere) * MAX_OBJECTS;
             sceneBuffer.buffer = m_sceneBuffer;
-            VkWriteDescriptorSet  writeScene  {};
+            VkWriteDescriptorSet writeScene{};
             writeScene.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writeScene.descriptorCount = 1;
             writeScene.dstBinding = 1;
             writeScene.dstArrayElement = 0;
-            writeScene.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writeScene.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writeScene.dstSet = m_descriptorSets[i];
             writeScene.pBufferInfo = &sceneBuffer;
 
-            List<VkWriteDescriptorSet> writes{writeImageInfo, writeScene};
+            VkDescriptorBufferInfo treeBufferInfo{};
+            treeBufferInfo.offset = 0;
+            treeBufferInfo.range = sizeof(BVHNode) * MAX_NODES;
+            treeBufferInfo.buffer = m_treeBuffer;
+            VkWriteDescriptorSet writeTree{};
+            writeTree.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeTree.descriptorCount = 1;
+            writeTree.dstBinding = 2;
+            writeTree.dstArrayElement = 0;
+            writeTree.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writeTree.dstSet = m_descriptorSets[i];
+            writeTree.pBufferInfo = &treeBufferInfo;
+
+            List<VkWriteDescriptorSet> writes{writeImageInfo, writeScene, writeTree};
 
             vkUpdateDescriptorSets(m_ctx->logicalDevice, writes.size(), writes.data(), 0, nullptr);
             LOG_INFO("Descriptor set written correctly");
@@ -162,6 +219,7 @@ namespace te {
             FRAME_PUSH_STRUCT frameInfo{};
             frameInfo.sampleCount = i + 1;
             frameInfo.objectCount = m_objectCount;
+            frameInfo.treeCount = m_tree.size();
             vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                                sizeof(FRAME_PUSH_STRUCT), &frameInfo);
             vkCmdDispatch(commandBuffer, (m_swapCtx->extends.width + 15) / 16, (m_swapCtx->extends.height + 15) / 16,
@@ -189,19 +247,38 @@ namespace te {
         vkFreeMemory(m_ctx->logicalDevice, m_sceneStagingBufferMemory, nullptr);
         vkDestroyBuffer(m_ctx->logicalDevice, m_sceneBuffer, nullptr);
         vkFreeMemory(m_ctx->logicalDevice, m_sceneBufferMemory, nullptr);
+        vkDestroyBuffer(m_ctx->logicalDevice, m_treeStagingBuffer, nullptr);
+        vkFreeMemory(m_ctx->logicalDevice, m_treeStagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_ctx->logicalDevice, m_treeBuffer, nullptr);
+        vkFreeMemory(m_ctx->logicalDevice, m_treeBufferMemory, nullptr);
+
     }
 
     void ComputeRT::setup_scene() {
-        VkDeviceSize sceneSize = sizeof (Sphere) * MAX_OBJECTS;
+        VkDeviceSize sceneSize = sizeof(Sphere) * MAX_OBJECTS;
+        VkDeviceSize treeSize = sizeof(BVHNode) * (MAX_NODES);
+
         create_buffer(m_ctx, m_sceneStagingBuffer, m_sceneStagingBufferMemory, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                       sceneSize);
-        create_buffer(m_ctx, m_sceneBuffer, m_sceneBufferMemory, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sizeof (Sphere) * MAX_OBJECTS);
-        void* data;
+        create_buffer(m_ctx, m_sceneBuffer, m_sceneBufferMemory,
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sceneSize);
+
+        create_buffer(m_ctx, m_treeStagingBuffer, m_treeStagingBufferMemory, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      treeSize);
+        create_buffer(m_ctx, m_treeBuffer, m_treeBufferMemory,
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, treeSize);
+        void *data;
         vkMapMemory(m_ctx->logicalDevice, m_sceneStagingBufferMemory, 0, sceneSize, 0, &data);
         memcpy(data, m_scene, sceneSize);
         vkUnmapMemory(m_ctx->logicalDevice, m_sceneStagingBufferMemory);
         copy_buffer_to_buffer(m_ctx, m_sceneStagingBuffer, m_sceneBuffer, sceneSize);
+        vkMapMemory(m_ctx->logicalDevice, m_treeStagingBufferMemory, 0, treeSize, 0, &data);
+        memcpy(data, m_tree.data(), treeSize);
+        vkUnmapMemory(m_ctx->logicalDevice, m_treeStagingBufferMemory);
+        copy_buffer_to_buffer(m_ctx, m_treeStagingBuffer, m_treeBuffer, treeSize);
     }
 }
