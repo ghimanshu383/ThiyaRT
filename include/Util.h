@@ -28,14 +28,18 @@ using List = std::vector<T>;
 
 constexpr std::uint32_t WIN_WIDTH = 800;
 constexpr uint32_t WIN_HEIGHT = 600;
-constexpr std::uint32_t SAMPLES = 100;
-constexpr int MAX_OBJECTS = 100;
-constexpr int MAX_NODES = 2 * MAX_OBJECTS - 1;
+constexpr std::uint32_t SAMPLES = 8;
+constexpr int MAX_OBJECTS_SPHERES = 100;
+constexpr int MAX_OBJECTS_QUADS = 100;
+constexpr int MAX_NODES = 2 * (MAX_OBJECTS_QUADS + MAX_OBJECTS_SPHERES) - 1;
+
 struct FRAME_PUSH_STRUCT {
     std::uint32_t sampleCount;
-    std::uint32_t objectCount;
+    std::uint32_t objectCountSphere;
+    std::uint32_t objectCountQuads;
     std::uint32_t treeCount;
 };
+
 struct Vertex {
     glm::vec3 pos;
     glm::vec2 uv;
@@ -46,22 +50,36 @@ struct Interval {
     float max;
     float pad[2];
 };
+
 struct AABB {
     Interval x;
     Interval y;
     Interval z;
 };
+
 struct Sphere {
     glm::vec4 geometry;
     glm::vec4 material;
     glm::vec4 properties;
     AABB box;
 };
+
+struct Quad {
+    glm::vec4 corner;
+    glm::vec4 uDir;
+    glm::vec4 vDir;
+    glm::vec4 normal;
+    glm::vec4 material;
+    glm::vec4 properties;
+    AABB box;
+};
+
 struct Primitive {
     int type;
     int index;
     AABB box;
 };
+
 struct BVHNode {
     AABB box;
     int internalIndex;
@@ -101,13 +119,13 @@ inline AABB box_from(AABB &a, AABB &b) {
 
 inline bool box_compare(AABB &a, AABB &b, int axis) {
     switch (axis) {
-        case 0 :
+        case 0:
             return a.x.min < b.x.min;
-        case 1 :
+        case 1:
             return a.y.min < b.y.min;
-        case 2 :
+        case 2:
             return a.z.min < b.z.min;
-        default :
+        default:
             return a.x.min < b.x.min;
     }
 }
@@ -124,19 +142,51 @@ inline bool box_compare_z(Primitive &a, Primitive &b) {
     return box_compare(a.box, b.box, 2);
 }
 
-inline void create_bounding_box_for_sphere(Sphere& sphere) {
-    Interval X {};
-    Interval Y {};
-    Interval Z {};
-    X.min = sphere.geometry.x  - sphere.geometry.w;
+inline void create_bounding_box_for_sphere(Sphere &sphere) {
+    Interval X{};
+    Interval Y{};
+    Interval Z{};
+    X.min = sphere.geometry.x - sphere.geometry.w;
     X.max = sphere.geometry.x + sphere.geometry.w;
     Y.min = sphere.geometry.y - sphere.geometry.w;
     Y.max = sphere.geometry.y + sphere.geometry.w;
     Z.min = sphere.geometry.z - sphere.geometry.w;
     Z.max = sphere.geometry.z + sphere.geometry.w;
 
-    AABB box {X, Y, Z};
+    AABB box{X, Y, Z};
     sphere.box = box;
+}
+
+inline AABB create_aabb_from_points(glm::vec3 pointOne, glm::vec3 pointTwo) {
+    Interval X{};
+    Interval Y{};
+    Interval Z{};
+    X.min = glm::min(pointOne.x, pointTwo.x);
+    X.max = glm::max(pointOne.x, pointTwo.x);
+    Y.min = glm::min(pointOne.y, pointTwo.y);
+    Y.max = glm::max(pointOne.y, pointTwo.y);
+    Z.min = glm::min(pointOne.z, pointTwo.z);
+    Z.max = glm::max(pointOne.z, pointTwo.z);
+    AABB box{X, Y, Z};
+    return box;
+}
+
+inline void setup_quad_bounding_box_and_parameters(Quad &quad) {
+    // creating  the bounding box;
+    AABB diagonalOne = create_aabb_from_points(quad.corner, quad.corner + quad.uDir + quad.vDir);
+    AABB diagonalTwo = create_aabb_from_points(quad.corner + quad.uDir, quad.corner + quad.vDir);
+    quad.box = box_from(diagonalOne, diagonalTwo);
+
+    glm::vec3 uDir = {quad.uDir.x, quad.uDir.y, quad.uDir.z};
+    glm::vec3 vDir = {quad.vDir.x, quad.vDir.y, quad.vDir.z};
+
+    auto n = glm::cross(uDir, vDir);
+    quad.normal = {glm::normalize(n), 0};
+    quad.properties.x = glm::dot(quad.normal, quad.corner);
+    const glm::vec3 w = n / glm::dot(n, n);
+    quad.properties.y = w.x;
+    quad.properties.z = w.y;
+    quad.properties.w = w.z;
 }
 
 inline BVHNode create_bvh_tree_nodes(List<BVHNode> &treeList, List<Primitive> &objects, int start, int end) {
@@ -321,7 +371,7 @@ inline void create_buffer(GpuContext *context, VkBuffer &buffer, VkDeviceMemory 
     name.pObjectName = "BufferMemory";
 
     PFN_vkSetDebugUtilsObjectNameEXT setName = (PFN_vkSetDebugUtilsObjectNameEXT) vkGetDeviceProcAddr(
-            context->logicalDevice, "vkSetDebugUtilsObjectNameEXT");
+        context->logicalDevice, "vkSetDebugUtilsObjectNameEXT");
     setName(context->logicalDevice, &name);
     vkBindBufferMemory(context->logicalDevice, buffer, memory, 0);
 }
@@ -447,7 +497,6 @@ inline void transition_image(GpuContext *ctx, VkImage &image, VkImageLayout prev
     VkCommandBuffer buffer = start_command_buffer(ctx);
     record_image_transition(buffer, image, prevLayout, newLayout, srcFlag, srcAccess, dstFlag, dstAccess);
     submit_to_queue(ctx, buffer);
-
 }
 
 #endif //THIYART_UTIL_H

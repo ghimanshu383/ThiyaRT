@@ -23,13 +23,20 @@ namespace te {
         VkDeviceMemory m_storageImageMemory = VK_NULL_HANDLE;
         VkSampler m_sampler;
 
-        int m_objectCount = 0;
-        Sphere m_scene[MAX_OBJECTS];
+        int m_objectCountSpheres = 0;
+        int m_objectCountQuads = 0;
+        int m_treeSize = 0;
+        Sphere m_scene_spheres[MAX_OBJECTS_SPHERES];
+        Quad m_scene_quads[MAX_OBJECTS_QUADS];
         List<BVHNode> m_tree {};
         VkBuffer m_sceneStagingBuffer{};
         VkDeviceMemory m_sceneStagingBufferMemory{};
         VkBuffer m_sceneBuffer{};
         VkDeviceMemory m_sceneBufferMemory{};
+        VkBuffer m_sceneQuadsStagingBuffer;
+        VkDeviceMemory m_sceneQuadsStagingBufferMemory;
+        VkBuffer m_sceneQuadsBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory m_sceneQuadsBufferMemory = VK_NULL_HANDLE;
         VkBuffer m_treeStagingBuffer{};
         VkDeviceMemory m_treeStagingBufferMemory{};
         VkBuffer m_treeBuffer{};
