@@ -9,56 +9,14 @@ namespace te {
     ComputeRT::ComputeRT(GpuContext *ctx, SwapchainContext *swapCtx,
                          const char *shaderPath) : m_ctx(ctx), m_swapCtx(swapCtx), m_shader_path(shaderPath) {
         m_tree.reserve(MAX_NODES);
-        Sphere sphereOne{};
-        sphereOne.geometry = glm::vec4{0, 0, -1, .5};
-        sphereOne.material = glm::vec4{0.1, 0.2, 0.5, 1};
-        create_bounding_box_for_sphere(sphereOne);
-        m_scene_spheres[0] = sphereOne;
-        m_objectCountSpheres++;
-
-        Sphere sphereGround{};
-        sphereGround.geometry = glm::vec4(0, -100.5, -1, 100);
-        sphereGround.material = glm::vec4(0.8, 0.8, 0.0, 1);
-        create_bounding_box_for_sphere(sphereGround);
-        m_scene_spheres[1] = sphereGround;
-        m_objectCountSpheres++;
-
-        Sphere sphereMetalLeft{};
-        sphereMetalLeft.geometry = glm::vec4{-1.0, 0.0, -1.0, .5};
-        sphereMetalLeft.material = glm::vec4{.9, .9, .9, 3};
-        sphereMetalLeft.properties = glm::vec4{0, (1.f / 1.5f), 0, 0};
-        create_bounding_box_for_sphere(sphereMetalLeft);
-        m_scene_spheres[2] = sphereMetalLeft;
-        m_objectCountSpheres++;
-        Sphere bubble{};
-        bubble.geometry = glm::vec4{-1, 0.f, -1.0, .4f};
-        bubble.material = glm::vec4{1, 1, 1, 3};
-        bubble.properties = glm::vec4{0, (1.5 / 1), 0, 0};
-        create_bounding_box_for_sphere(bubble);
-        m_scene_spheres[3] = bubble;
-        m_objectCountSpheres++;
-        Sphere sphereMetalRight{};
-        sphereMetalRight.geometry = glm::vec4{1.0, 0.0, -1.0, .5};
-        sphereMetalRight.material = glm::vec4{0.9, 0.9, 0.9, 2};
-        sphereMetalRight.properties = glm::vec4{.1, 0, 0, 0};
-        create_bounding_box_for_sphere(sphereMetalRight);
-        m_scene_spheres[4] = sphereMetalRight;
-        m_objectCountSpheres++;
-
-        Quad redQuad {};
-        redQuad.corner = glm::vec4{0, 1, 0, 0};
-        redQuad.uDir = glm::vec4{0, 0, -1, 0};
-        redQuad.vDir = glm::vec4{ 1 , 0, 0, 0};
-        redQuad.material = glm::vec4{1, .2, .2, 1};
-        setup_quad_bounding_box_and_parameters(redQuad);
-        m_scene_quads[0] = redQuad;
-        m_objectCountQuads++;
+        //  setup_sphere_scene();
+        setup_cornell_box();
 
         List<Primitive> primitiveList{};
         for (int i = 0; i < m_objectCountSpheres; i++) {
             primitiveList.push_back({0, i, m_scene_spheres[i].box});
         }
-        for (int i = 0 ; i < m_objectCountQuads; i++) {
+        for (int i = 0; i < m_objectCountQuads; i++) {
             primitiveList.push_back({1, i, m_scene_quads[i].box});
         }
         create_bvh_tree_nodes(m_tree, primitiveList, 0, primitiveList.size() - 1);
@@ -239,7 +197,7 @@ namespace te {
             writeQuads.dstSet = m_descriptorSets[i];
             writeQuads.pBufferInfo = &quadsBufferInfo;
 
-            List<VkWriteDescriptorSet> writes{writeImageInfo, writeScene, writeTree,  writeQuads};
+            List<VkWriteDescriptorSet> writes{writeImageInfo, writeScene, writeTree, writeQuads};
 
             vkUpdateDescriptorSets(m_ctx->logicalDevice, writes.size(), writes.data(), 0, nullptr);
             LOG_INFO("Descriptor set written correctly");
@@ -337,5 +295,99 @@ namespace te {
         memcpy(data, m_tree.data(), treeSize);
         vkUnmapMemory(m_ctx->logicalDevice, m_treeStagingBufferMemory);
         copy_buffer_to_buffer(m_ctx, m_treeStagingBuffer, m_treeBuffer, treeSize);
+    }
+
+    void ComputeRT::setup_sphere_scene() {
+        Sphere sphereOne{};
+        sphereOne.geometry = glm::vec4{0, 0, -1, .5};
+        sphereOne.material = glm::vec4{0.1, 0.2, 0.5, 1};
+        create_bounding_box_for_sphere(sphereOne);
+        m_scene_spheres[0] = sphereOne;
+        m_objectCountSpheres++;
+
+        Sphere sphereGround{};
+        sphereGround.geometry = glm::vec4(0, -100.5, -1, 100);
+        sphereGround.material = glm::vec4(0.8, 0.8, 0.0, 1);
+        create_bounding_box_for_sphere(sphereGround);
+        m_scene_spheres[1] = sphereGround;
+        m_objectCountSpheres++;
+
+        Sphere sphereMetalLeft{};
+        sphereMetalLeft.geometry = glm::vec4{-1.0, 0.0, -1.0, .5};
+        sphereMetalLeft.material = glm::vec4{.9, .9, .9, 3};
+        sphereMetalLeft.properties = glm::vec4{0, (1.f / 1.5f), 0, 0};
+        create_bounding_box_for_sphere(sphereMetalLeft);
+        m_scene_spheres[2] = sphereMetalLeft;
+        m_objectCountSpheres++;
+        Sphere bubble{};
+        bubble.geometry = glm::vec4{-1, 0.f, -1.0, .4f};
+        bubble.material = glm::vec4{1, 1, 1, 3};
+        bubble.properties = glm::vec4{0, (1.5 / 1), 0, 0};
+        create_bounding_box_for_sphere(bubble);
+        m_scene_spheres[3] = bubble;
+        m_objectCountSpheres++;
+        Sphere sphereMetalRight{};
+        sphereMetalRight.geometry = glm::vec4{1.0, 0.0, -1.0, .5};
+        sphereMetalRight.material = glm::vec4{0.9, 0.9, 0.9, 2};
+        sphereMetalRight.properties = glm::vec4{.1, 0, 0, 0};
+        create_bounding_box_for_sphere(sphereMetalRight);
+        m_scene_spheres[4] = sphereMetalRight;
+        m_objectCountSpheres++;
+    }
+
+    void ComputeRT::setup_cornell_box() {
+        Quad greenQuad{};
+        greenQuad.corner = glm::vec4(555, 0, 0, 0);
+        greenQuad.vDir   = glm::vec4(0, 555, 0, 0);
+        greenQuad.uDir   = glm::vec4(0, 0, 555, 0);
+        greenQuad.material = glm::vec4(0.12, 0.45, 0.15, 1);
+        setup_quad_bounding_box_and_parameters(greenQuad);
+        m_scene_quads[0] = greenQuad;
+        m_objectCountQuads++;
+
+        Quad redQuad{};
+        redQuad.corner = glm::vec4(0, 0, 0, 0);
+        redQuad.vDir   = glm::vec4(0, 555, 0, 0);
+        redQuad.uDir   = glm::vec4(0, 0, 555, 0);
+        redQuad.material = glm::vec4(0.65, 0.05, 0.05, 1);
+        setup_quad_bounding_box_and_parameters(redQuad);
+        m_scene_quads[1] = redQuad;
+        m_objectCountQuads++;
+
+        Quad floorQuad{};
+        floorQuad.corner = glm::vec4(0, 0, 0, 0);
+        floorQuad.vDir   = glm::vec4(555, 0, 0, 0);
+        floorQuad.uDir   = glm::vec4(0, 0, 555, 0);
+        floorQuad.material = glm::vec4(0.73, 0.73, 0.73, 1);
+        setup_quad_bounding_box_and_parameters(floorQuad);
+        m_scene_quads[2] = floorQuad;
+        m_objectCountQuads++;
+
+        Quad ceilingQuad{};
+        ceilingQuad.corner = glm::vec4(555, 555, 555, 0);
+        ceilingQuad.uDir   = glm::vec4(-555, 0, 0, 0);
+        ceilingQuad.vDir   = glm::vec4(0, 0, -555, 0);
+        ceilingQuad.material = glm::vec4(0.73, 0.73, 0.73, 1);
+        setup_quad_bounding_box_and_parameters(ceilingQuad);
+        m_scene_quads[3] = ceilingQuad;
+        m_objectCountQuads++;
+
+        Quad backQuad{};
+        backQuad.corner = glm::vec4(0, 0, 555, 0);
+        backQuad.vDir   = glm::vec4(555, 0, 0, 0);
+        backQuad.uDir   = glm::vec4(0, 555, 0, 0);
+        backQuad.material = glm::vec4(0.73, 0.73, 0.73, 1);
+        setup_quad_bounding_box_and_parameters(backQuad);
+        m_scene_quads[4] = backQuad;
+        m_objectCountQuads++;
+
+        Quad lightQuad{};
+        lightQuad.corner = glm::vec4(343, 554, 332, 0);
+        lightQuad.vDir   = glm::vec4(-130, 0, 0, 0);
+        lightQuad.uDir   = glm::vec4(0, 0, -105, 0);
+        lightQuad.material = glm::vec4(15, 15, 15, 4);
+        setup_quad_bounding_box_and_parameters(lightQuad);
+        m_scene_quads[5] = lightQuad;
+        m_objectCountQuads++;
     }
 }

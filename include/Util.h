@@ -171,11 +171,28 @@ inline AABB create_aabb_from_points(glm::vec3 pointOne, glm::vec3 pointTwo) {
     return box;
 }
 
+
+inline float get_interval_size(const Interval &inter) {
+    return abs(inter.max - inter.min);
+}
+
+inline void pad_interval(Interval &inter) {
+    float delta = .001;
+    float intervalSize = get_interval_size(inter);
+    if (intervalSize < delta) {
+        inter.min -= delta / 2;
+        inter.max += delta / 2;
+    }
+}
+
 inline void setup_quad_bounding_box_and_parameters(Quad &quad) {
     // creating  the bounding box;
     AABB diagonalOne = create_aabb_from_points(quad.corner, quad.corner + quad.uDir + quad.vDir);
     AABB diagonalTwo = create_aabb_from_points(quad.corner + quad.uDir, quad.corner + quad.vDir);
     quad.box = box_from(diagonalOne, diagonalTwo);
+    pad_interval(quad.box.x);
+    pad_interval(quad.box.y);
+    pad_interval(quad.box.z);
 
     glm::vec3 uDir = {quad.uDir.x, quad.uDir.y, quad.uDir.z};
     glm::vec3 vDir = {quad.vDir.x, quad.vDir.y, quad.vDir.z};

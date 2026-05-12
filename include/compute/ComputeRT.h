@@ -57,6 +57,8 @@ namespace te {
 
         void compute(VkCommandBuffer &commandBuffer, std::uint32_t currImage);
 
+        void setup_cornell_box();
+        void setup_sphere_scene();
         void clean_up();
     };
 }

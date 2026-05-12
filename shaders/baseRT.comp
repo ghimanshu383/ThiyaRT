@@ -96,13 +96,14 @@ uint init_seed(uvec2 id, uint frame) {
 vec3 get_ray_at(Ray ray, float t) {
     return (ray.start + ray.direction * t);
 }
+
 void set_face_normal(inout HitRecord record, vec3 dir) {
     float val = dot(normalize(dir), record.normal);
     record.frontFace = val < 0;
     record.normal = record.frontFace ? record.normal : record.normal * -1;
 }
 bool check_interval_constraint(Interval interval, float d) {
-    return (interval.min < d && interval.max > d);
+    return (interval.min <= d && interval.max >= d);
 }
 vec3 get_random_unit_vector(inout uint seed) {
     float randX = rand(seed);
@@ -142,6 +143,7 @@ Interval get_aabb_interval(AABB box, int i) {
         return box.z;
     }
 }
+
 int check_check_aab_hit(AABB box, Ray ray, Interval ray_interval) {
     float tNear = ray_interval.min;
     float tFar = ray_interval.max;
@@ -298,9 +300,9 @@ void main() {
     //  vec2 uv = 2.f * ndc - 1.f;
     //uv.x = uv.x * aspect;
     //float focalLength = 1.f;
-    vec3 cameraPos = vec3(1, 0, 3);
-    vec3 lookAt = vec3(0, 0, 0);
-    vec3 pixelCenter = get_pixel_center(cameraPos, lookAt, 45, kx, ky, size);
+    vec3 cameraPos = vec3(278, 278, -800);
+    vec3 lookAt    = vec3(278, 278, 0);
+    vec3 pixelCenter = get_pixel_center(cameraPos, lookAt, 40, kx, ky, size);
     Ray ray;
     ray.start = vec3(cameraPos);
     ray.direction = normalize(vec3(pixelCenter - cameraPos));
@@ -309,26 +311,34 @@ void main() {
     vec3 throuput = vec3(1);
     vec3 atten = vec3(1.f);
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 10; i++) {
         HitRecord record;
         record.t = 0;
         Interval rayInter;
         rayInter.min = 0.001;
-        rayInter.max = 100.f;
+        rayInter.max = 1000.f;
+        float atten = .5;
         if (check_tree_hit(ray, rayInter, record) == 1) {
+            if (record.material.w == 4) {
+                //light source found;
+                vec3 emission = record.material.xyz;
+                color = throuput * emission;
+                break;
+            }
+            //atten *= .5f;
             vec3 surfaceColor;
             switch (int(record.material.w)) {
                 case 1:
                 ray.start = record.p + (record.normal * .001);
                 ray.direction = scatter_random(record.normal, seed);
                 surfaceColor = record.material.xyz;
-                throuput *= surfaceColor * .5f;
+                throuput *= surfaceColor * atten;
                 break;
                 case 2:
                 ray.start = record.p + (record.normal * .001);
                 ray.direction = reflect(ray.direction, record.normal) + record.properties.x * get_random_unit_vector(seed);
                 surfaceColor = record.material.xyz;
-                throuput *= surfaceColor * .5f;
+                throuput *= surfaceColor * atten;
                 break;
                 case 3:
                 ray.start = record.p + (ray.direction * .001);
@@ -341,14 +351,14 @@ void main() {
                 default :
                 ray.direction = scatter_random(record.normal, seed);
                 surfaceColor = record.material.xyz;
-                throuput *= surfaceColor * .5f;
+                throuput *= surfaceColor * atten;
             }
         } else {
-            float a = .5 * (normalize(ray.direction).y + 1);
-            //  vec3 skyColor = (vec3(1) * (1 - a)) + vec3(.5, 0.7, 1) * a;;
-            vec3 skyColor = vec3(1);
-            color = skyColor * throuput;
-            break;
+            //            float a = .5 * (normalize(ray.direction).y + 1);
+            //            //  vec3 skyColor = (vec3(1) * (1 - a)) + vec3(.5, 0.7, 1) * a;;
+            //            vec3 skyColor = vec3(1);
+            //            color = skyColor * throuput;
+            //            break;
         }
     }
 
